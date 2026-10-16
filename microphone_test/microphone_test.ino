@@ -1,118 +1,112 @@
-// Arduino UNO R4 WiFi マイク + HC-SR04 動作確認
-// HC-SR04: VCC -> 5V, GND -> GND, Trig -> D9, Echo -> D11
-// HC-SR04 V2020のデフォルトGPIOモードを使用．測定間隔は200 ms以上．
-// 対象：KY-037 / KY-038 など、AO・DO出力を持つマイクモジュール
-// 配線：AO -> A0、DO -> D7、GND -> GND
-// VCCは使用するモジュールの仕様に合わせること（5V対応品は5V）．
-// D8はIMU用に予約されているため、確認用LEDにはLED_BUILTINを使う．
+// UNO R4 WiFi: autonomous common A/B start-tone detection + HC-SR04 monitor.
+// Microphone: AO=A0, DO=D7, 5V-compatible VCC=5V, GND=GND.
+// HC-SR04 default GPIO mode: Trig=D9, Echo=D11, VCC=5V, GND=GND.
+// Classification uses AO waveform; DO and its threshold do not decide A/B.
+#include "ra0020_classifier.h"
 
-const int led = LED_BUILTIN;
-const int digitalPin = 7;
-const int analogPin = A0;
-const int ultrasonicTrigPin = 9;
-const int ultrasonicEchoPin = 11;
-const unsigned long RANGE_INTERVAL_MS = 250UL;
-const unsigned long ECHO_TIMEOUT_US = 40000UL;
+const unsigned long RANGE_INTERVAL_MS = 250;
+const unsigned long ECHO_TIMEOUT_US = 40000;
+const unsigned long SAMPLE_PERIOD_US = 100; // 10 kHz
+uint16_t audioSamples[AUDIO_SAMPLES];
+WhistleClassifier classifier;
 unsigned long lastRangeMs = 0;
-float distanceCm = -1.0f; // -1: 未測定またはタイムアウト
+float distanceCm = -1;
+char previousCandidate = '?';
+unsigned int consecutiveMatches = 0;
+// Require three quiet/non-target blocks after reset before arming.
+// START is latched until reset. This sketch never commands the ESC.
+unsigned int clearBlocks = 0, startMatches = 0;
+bool armed = false, startDetected = false;
 
-float readDistanceCm()
-{
-  digitalWrite(ultrasonicTrigPin, LOW);
-  delayMicroseconds(2);
-  digitalWrite(ultrasonicTrigPin, HIGH);
-  delayMicroseconds(12); // 仕様: 10 usより長いパルス
-  digitalWrite(ultrasonicTrigPin, LOW);
-  const unsigned long echoUs = pulseIn(ultrasonicEchoPin, HIGH, ECHO_TIMEOUT_US);
-  if (echoUs == 0) return -1.0f;
-  return echoUs * 0.0343f / 2.0f; // 約20℃での音速、往復距離を補正
+float readDistanceCm() {
+  digitalWrite(9, LOW); delayMicroseconds(2);
+  digitalWrite(9, HIGH); delayMicroseconds(12);
+  digitalWrite(9, LOW);
+  unsigned long echoUs = pulseIn(11, HIGH, ECHO_TIMEOUT_US);
+  return echoUs ? echoUs * 0.0343f / 2.0f : -1.0f;
 }
 
-// 元のプログラムと同じくHIGHでLEDを点灯．
-// 音を検出したときDOがLOWになるモジュールではLOWに変更する．
-const int SOUND_ACTIVE_LEVEL = HIGH;
-const float ADC_REFERENCE_V = 5.0f;  // 公称値．精密な電圧測定用ではない
-const int ADC_MAX = 4095;           // 12 bit：0～4095
-const unsigned long SAMPLE_WINDOW_US = 20000UL; // 20 ms
-const unsigned long REPORT_INTERVAL_MS = 100UL;
-const unsigned long LED_HOLD_MS = 150UL; // 短い反応を目視できるよう保持
-
-unsigned long lastReportMs = 0;
-unsigned long lastDetectionMs = 0;
-bool detectionSeen = false;
-
-void setup()
-{
-  pinMode(led, OUTPUT);
-  digitalWrite(led, LOW);
-  pinMode(digitalPin, INPUT);
-  pinMode(ultrasonicTrigPin, OUTPUT);
-  digitalWrite(ultrasonicTrigPin, LOW);
-  pinMode(ultrasonicEchoPin, INPUT);
-  analogReadResolution(12); // UNO R4のADC読み取り分解能を明示
-  Serial.begin(9600);
-  // Serial接続待ちはしない．USB未接続でもLEDで確認可能．
+void setup() {
+  pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(7, INPUT);
+  pinMode(9, OUTPUT); digitalWrite(9, LOW);
+  pinMode(11, INPUT);
+  analogReadResolution(12);
+  classifier.begin();
+  Serial.begin(115200);
 }
 
-void loop()
-{
-  if (millis() - lastRangeMs >= RANGE_INTERVAL_MS) {
+void loop() {
+  // Do not run ultrasonic measurements or Serial writes inside this sample block.
+  unsigned long due = micros();
+  unsigned long firstSampleUs = 0, lastSampleUs = 0, maxLateUs = 0;
+  unsigned int lateSamples = 0;
+  for (int i = 0; i < AUDIO_SAMPLES; ++i) {
+    while ((int32_t)(micros()-due) < 0) {}
+    unsigned long actual = micros();
+    unsigned long lateUs = actual-due;
+    if (lateUs > 25) ++lateSamples;
+    if (lateUs > maxLateUs) maxLateUs = lateUs;
+    if (i == 0) firstSampleUs = actual;
+    lastSampleUs = actual;
+    audioSamples[i] = analogRead(A0);
+    due += SAMPLE_PERIOD_US;
+  }
+  float sampleHz = (AUDIO_SAMPLES-1)*1000000.0f/(lastSampleUs-firstSampleUs);
+  // Allow at most two small scheduling delays, but reject a missed sample period.
+  bool timingOK = lateSamples <= 2 && maxLateUs < SAMPLE_PERIOD_US &&
+                  sampleHz >= 9900.0f && sampleHz <= 10100.0f;
+  SoundResult r = classifier.analyze(audioSamples);
+  // A/B share a carrier near 3.2 kHz. Modulation classification is diagnostic only.
+  bool toneMatch = timingOK && !r.clipped && r.rms >= MIN_RMS_COUNTS &&
+                   r.toneRatio >= MIN_TONE_RATIO;
+  const char *reason = !timingOK ? "TIMING" : r.clipped ? "CLIPPING" :
+                       r.rms < MIN_RMS_COUNTS ? "WEAK" :
+                       r.toneRatio < MIN_TONE_RATIO ? "NOT_TARGET" : "MATCH";
+  if (!armed) {
+    if (timingOK && !r.clipped && !toneMatch) {
+      if (++clearBlocks >= 3) armed = true;
+    } else clearBlocks = 0;
+  } else if (!startDetected) {
+    if (toneMatch) {
+      if (++startMatches >= 2) startDetected = true;
+    } else startMatches = 0;
+  }
+  // Integration point: startDetected is decided and retained entirely on Arduino.
+  // A reset only re-arms detection; it does not issue a start command.
+  char candidate = timingOK ? r.candidate : '?';
+  if (candidate != '?' && candidate == previousCandidate) {
+    if (consecutiveMatches < 2) ++consecutiveMatches;
+  } else consecutiveMatches = candidate == '?' ? 0 : 1;
+  previousCandidate = candidate;
+  const char *soundClass = consecutiveMatches >= 2 ? (candidate == 'A' ? "A" : "B") : "Unknown";
+  int digitalValue = digitalRead(7);
+  digitalWrite(LED_BUILTIN, startDetected ? HIGH : LOW);
+
+  if (millis()-lastRangeMs >= RANGE_INTERVAL_MS) {
     lastRangeMs = millis();
     distanceCm = readDistanceCm();
   }
-
-  int minValue = ADC_MAX;
-  int maxValue = 0;
-  unsigned long sum = 0;
-  unsigned long count = 0;
-  bool detectedInWindow = false;
-  const unsigned long windowStartUs = micros();
-
-  // 100 msごとの単発測定では短い音を見落としやすいため、
-  // 20 ms間サンプリングして振幅（最大値－最小値）を求める．
-  do {
-    const int value = analogRead(analogPin);
-    if (value < minValue) minValue = value;
-    if (value > maxValue) maxValue = value;
-    sum += value;
-    ++count;
-
-    if (digitalRead(digitalPin) == SOUND_ACTIVE_LEVEL) {
-      detectedInWindow = true;
-    }
-  } while (micros() - windowStartUs < SAMPLE_WINDOW_US);
-
-  const unsigned long nowMs = millis();
-  if (detectedInWindow) {
-    lastDetectionMs = nowMs;
-    detectionSeen = true;
-  }
-  digitalWrite(led, detectionSeen &&
-                    (nowMs - lastDetectionMs < LED_HOLD_MS) ? HIGH : LOW);
-
-  if (nowMs - lastReportMs >= REPORT_INTERVAL_MS) {
-    lastReportMs = nowMs;
-    const float meanVoltage = (sum / (float)count) * ADC_REFERENCE_V / ADC_MAX;
-    const float peakToPeakVoltage = (maxValue - minValue) * ADC_REFERENCE_V / ADC_MAX;
-    const int digitalValue = digitalRead(digitalPin);
-
-    // シリアルモニタ／プロッタ：9600 baud
-    // DOはその瞬間の生値．LEDは短い検出を150 ms保持する．
-    Serial.print("Mean_V:");
-    Serial.print(meanVoltage, 3);
-    Serial.print("\tPeakToPeak_V:");
-    Serial.print(peakToPeakVoltage, 3);
-    Serial.print("\tDO:");
-    Serial.print(digitalValue);
-    Serial.print("\tDistance_cm:");
-    Serial.println(distanceCm, 1);
-  }
+  // Keep existing monitor fields and add the classifier diagnostics.
+  Serial.print("Mean_V:"); Serial.print(r.mean*5.0f/4095, 3);
+  Serial.print("\tPeakToPeak_V:"); Serial.print(r.peakToPeak*5.0f/4095, 3);
+  Serial.print("\tDO:"); Serial.print(digitalValue);
+  Serial.print("\tDistance_cm:"); Serial.print(distanceCm, 1);
+  Serial.print("\tClass:"); Serial.print(soundClass);
+  Serial.print("\tCandidate:"); Serial.print(candidate);
+  Serial.print("\tMod_Hz:"); Serial.print(r.modulationHz, 0);
+  Serial.print("\tTone:"); Serial.print(r.toneRatio, 2);
+  Serial.print("\tPurity:"); Serial.print(r.purity, 2);
+  Serial.print("\tRMS:"); Serial.print(r.rms, 1);
+  Serial.print("\tTiming_OK:"); Serial.print(timingOK ? 1 : 0);
+  Serial.print("\tClipped:"); Serial.print(r.clipped ? 1 : 0);
+  Serial.print("\tSample_Hz:"); Serial.print(sampleHz, 0);
+  Serial.print("\tMaxLate_us:"); Serial.print(maxLateUs);
+  Serial.print("\tLateSamples:"); Serial.print(lateSamples);
+  Serial.print("\tStart:"); Serial.print(startDetected ? 1 : 0);
+  Serial.print("\tState:"); Serial.print(startDetected ? "STARTED" : !armed ? "WAIT_CLEAR" : startMatches ? "CONFIRMING" : "ARMED");
+  Serial.print("\tReason:"); Serial.println(reason);
 }
-
-// 注意：これは単独のテスト用スケッチ．サーボやESCは駆動しない．
-// サンプリング区間とSerial出力はブロッキングするため、
-// 自動走行プログラムへ組み込む場合は処理方式を見直すこと．
-// 超音波のpulseIn待機中（最大40 ms）はマイクを取得しない．
-// Distance_cmは最新の測定値を保持．-1を障害物なしと解釈しないこと．
-// ポテンショメータは多くのモジュールでDOの比較しきい値を調整する．
-// AOを必ず2.5 Vに調整するものではない．音圧レベル(dB)は測定しない．
+// Bench test only: no servo/ESC control. Sampling blocks for 256 ms; processing,
+// Serial output and ultrasound create gaps between blocks. Not continuous audio.
+// START and LED remain active until reset; Class A/B is optional diagnostic output.

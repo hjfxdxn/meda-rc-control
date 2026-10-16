@@ -1,20 +1,20 @@
 <!doctype html>
-<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Arduino 传感器检测</title>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Arduino Sensor Monitor</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#101724;color:#e8eef9;font:16px system-ui,sans-serif}main{max-width:1100px;margin:auto;padding:36px 24px}h1{font-size:30px;margin:0 0 8px}p,.muted{color:#9eacc3;line-height:1.6}.bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:22px 0}button,select,input{font:inherit;border:1px solid #42516b;border-radius:8px;padding:10px;background:#202c40;color:#fff}button{cursor:pointer}button.primary{background:#3979ed;border-color:#3979ed}button:disabled{opacity:.4;cursor:default}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.card,.plot{padding:22px;background:#192337;border:1px solid #2e3d57;border-radius:16px}.value{font-size:38px;font-weight:650;margin:16px 0;min-height:48px}.unit{font-size:17px;color:#9eacc3}.plot{margin-top:18px}canvas{display:block;width:100%;height:200px}h2{font-size:17px;margin:0 0 16px}.ok{color:#57dfba}.warn{color:#ffc16c}#status{color:#b8c9e7}pre{white-space:pre-wrap;word-break:break-all;color:#9eacc3;font-size:13px}input{width:90px}@media(max-width:700px){.cards{grid-template-columns:1fr}.value{font-size:30px}}
 </style>
-<main><h1>Arduino 传感器检测</h1><p>UNO R4 WiFi · 麦克风 A0 / D7 · 超声波 D9 / D11 · 9600 baud</p>
-<div class="bar"><button id="connect" class="primary">连接 Arduino</button><button id="disconnect" disabled>断开</button><span id="status">未连接</span></div>
-<div class="cards">
-<section class="card"><span class="muted">超声波距离</span><div class="value" id="distance">—</div><div id="rangeState" class="muted">等待数据</div></section>
-<section class="card"><span class="muted">麦克风峰峰值</span><div class="value"><span id="amplitude">—</span> <span class="unit">V</span></div><div class="muted">20 ms 采样窗口幅度，不是分贝</div></section>
-<section class="card"><span class="muted">麦克风数字触发</span><div class="value" id="sound">—</div><div class="muted" id="mean">平均电压 — · DO —</div></section></div>
-<div class="bar"><label>声音有效电平 <select id="active"><option value="1">HIGH（1）</option><option value="0">LOW（0）</option></select></label><label>距离提示阈值 <input id="threshold" type="number" min="2" max="450" value="30"> cm</label></div>
-<div class="plot"><h2>麦克风幅度 / V <span class="muted">· 最近 20 秒</span></h2><canvas id="micPlot"></canvas></div>
-<div class="plot"><h2>距离 / cm <span class="muted">· 最近 20 秒，无回波处断线</span></h2><canvas id="rangePlot"></canvas></div>
-<p>先上传 microphone_test.ino，再关闭 Arduino IDE 的串口监视器和串口绘图器。使用桌面版 Chrome 或 Edge 打开此文件，点击连接并选择开发板串口。距离提示仅用于观察，不控制电机。</p>
-<p>数字触发是串口报告瞬间的 DO，短促声音可能漏报；超声波等待回波时也会短暂暂停麦克风采样。</p><pre id="raw">等待串口数据…</pre>
+<main><h1>Arduino Sensor Monitor</h1><p>UNO R4 WiFi · Microphone A0 / D7 · Ultrasonic D9 / D11 · 115200 baud</p>
+<div class="bar"><button id="connect" class="primary">Connect Arduino</button><button id="disconnect" disabled>Disconnect</button><span id="status">Not connected</span></div>
+<section class="card"><span class="muted">Arduino Start-Signal Detection</span><div class="value" id="classification">Waiting for data</div><div class="muted" id="features">Either A or B triggers START · Keep quiet for 1 second first · Two-window confirmation</div></section><br><div class="cards">
+<section class="card"><span class="muted">Ultrasonic distance</span><div class="value" id="distance">—</div><div id="rangeState" class="muted">Waiting for data</div></section>
+<section class="card"><span class="muted">Microphone peak-to-peak</span><div class="value"><span id="amplitude">—</span> <span class="unit">V</span></div><div class="muted">Amplitude over 256 ms; not a decibel reading</div></section>
+<section class="card"><span class="muted">Microphone digital trigger</span><div class="value" id="sound">—</div><div class="muted" id="mean">Mean voltage — · DO —</div></section></div>
+<div class="bar"><label>DO active level <select id="active"><option value="1">HIGH (1)</option><option value="0">LOW (0)</option></select></label><label>Distance alert threshold <input id="threshold" type="number" min="2" max="450" value="30"> cm</label></div>
+<div class="plot"><h2>Microphone amplitude / V <span class="muted">· Last 20 seconds</span></h2><canvas id="micPlot"></canvas></div>
+<div class="plot"><h2>Distance / cm <span class="muted">· Last 20 seconds; gaps indicate no echo</span></h2><canvas id="rangePlot"></canvas></div>
+<p>Upload microphone_test.ino, then close the Arduino IDE Serial Monitor and Serial Plotter. Open this file in desktop Chrome or Edge, click Connect Arduino, and select the board port. The distance alert is for monitoring only and does not control the motor.</p>
+<p>Arduino detects the start signal using A0; this page only displays the result. After power-on, keep quiet for about 1 second, then play either start sound for about 1 second. START and the onboard LED remain latched until reset; reset itself does not trigger a start. Similar sustained tones may also trigger detection, so test in the actual environment. Sampling pauses during ultrasonic measurement and processing.</p><pre id="raw">Waiting for serial data…</pre>
 </main>
 <script>
 'use strict';
@@ -22,42 +22,51 @@ const $=id=>document.getElementById(id);
 let port=null,reader=null,running=false,lastReceived=0,history=[],latest=null;
 function parseLine(line){
   const values={};
-  for(const match of line.matchAll(/(Mean_V|PeakToPeak_V|DO|Distance_cm):\s*(-?\d+(?:\.\d+)?)/g))values[match[1]]=Number(match[2]);
+  for(const match of line.matchAll(/(Mean_V|PeakToPeak_V|DO|Distance_cm|Mod_Hz|Tone|Purity|RMS|Timing_OK|Clipped|Sample_Hz|MaxLate_us|LateSamples|Start):\s*(-?\d+(?:\.\d+)?)/g))values[match[1]]=Number(match[2]);
   if(!['Mean_V','PeakToPeak_V','DO','Distance_cm'].every(k=>Number.isFinite(values[k])))return null;
   if(![0,1].includes(values.DO))return null;
+  values.soundClass = line.match(/(?:^|\s)Class:(A|B|Unknown)(?=\s|$)/)?.[1] ?? "Legacy";
+  values.state = line.match(/(?:^|\s)State:(\w+)/)?.[1];
+  values.reason = line.match(/(?:^|\s)Reason:(\w+)/)?.[1];
   return values;
 }
 function display(){
   if(!latest)return;
   const v=latest,d=v.Distance_cm;
+  const label=v.Timing_OK===0?'Sampling rate error':v.Clipped===1?'Input too loud / Clipping':v.soundClass==='A'?'A · Buzzer':v.soundClass==='B'?'B · Trill':v.soundClass==='Legacy'?'Upload the updated A/B sketch':'Unknown / Awaiting confirmation';
+  const reasons={TIMING:'Sampling error',CLIPPING:'Input clipping',WEAK:'Weak signal / Quiet',NOT_TARGET:'Frequency mismatch',MATCH:'Target tone'};
+  $('classification').textContent=v.Start===1?'START · Detected and latched':v.state==='WAIT_CLEAR'?'Initializing · Keep quiet':v.state==='CONFIRMING'?'Candidate detected · Confirming':v.state==='ARMED'?'Waiting for start signal':label;
+  $('classification').className='value '+(v.Start===1?'ok':'warn');
+  $('features').textContent=`${reasons[v.reason]??'Upload the updated sketch'} · Sampling ${v.Sample_Hz??'—'} Hz · Band ratio ${v.Tone??'—'} · RMS ${v.RMS??'—'} counts · Max delay ${v.MaxLate_us??'—'} µs`;
+
   $('amplitude').textContent=v.PeakToPeak_V.toFixed(3);
-  $('mean').textContent=`平均电压 ${v.Mean_V.toFixed(3)} V · DO ${v.DO}`;
+  $('mean').textContent=`Mean voltage ${v.Mean_V.toFixed(3)} V · DO ${v.DO}`;
   const triggered=v.DO===Number($('active').value);
-  $('sound').textContent=triggered?'检测到声音':'未触发';$('sound').className='value '+(triggered?'warn':'ok');
-  $('distance').textContent=d<0?'无回波':d.toFixed(1)+' cm';
+  $('sound').textContent=triggered?'Sound detected':'Not triggered';$('sound').className='value '+(triggered?'warn':'ok');
+  $('distance').textContent=d<0?'No echo':d.toFixed(1)+' cm';
   const near=d>=0&&d<Number($('threshold').value);
-  $('rangeState').textContent=d<0?'未测得有效距离':d<2?'低于标称最小距离':d>450?'超过典型量程，请核实':near?'物体接近提示':'正常测距';
+  $('rangeState').textContent=d<0?'No valid distance reading':d<2?'Below rated minimum distance':d>450?'Beyond typical range; verify reading':near?'Nearby object alert':'Distance reading available';
   $('rangeState').className=d<2||d>450||near?'warn':'ok';
 }
-function accept(line){const v=parseLine(line);if(!v)return;lastReceived=performance.now();latest=v;history.push({t:lastReceived,m:v.PeakToPeak_V,d:v.Distance_cm});history=history.filter(x=>x.t>=lastReceived-20000);$('raw').textContent=line;$('status').textContent='已连接 · 正在接收';display();}
+function accept(line){const v=parseLine(line);if(!v)return;lastReceived=performance.now();latest=v;history.push({t:lastReceived,m:v.PeakToPeak_V,d:v.Distance_cm});history=history.filter(x=>x.t>=lastReceived-20000);$('raw').textContent=line;$('status').textContent='Connected · Receiving';display();}
 async function connect(){
-  if(!navigator.serial){$('status').textContent='请使用桌面版 Chrome / Edge 打开此文件';return;}
+  if(!navigator.serial){$('status').textContent='Open this file in desktop Chrome or Edge';return;}
   $('connect').disabled=true;
   try{
-    port=await navigator.serial.requestPort();await port.open({baudRate:9600});running=true;latest=null;history=[];lastReceived=0;
-    $('disconnect').disabled=false;$('status').textContent='已连接 · 等待数据';
+    port=await navigator.serial.requestPort();await port.open({baudRate:115200});running=true;latest=null;history=[];lastReceived=0;
+    $('disconnect').disabled=false;$('status').textContent='Connected · Waiting for data';
     reader=port.readable.getReader();const decoder=new TextDecoder();let buffer='';
     while(running){const {value,done}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true});let end;while((end=buffer.indexOf('\n'))>=0){accept(buffer.slice(0,end).trim());buffer=buffer.slice(end+1);}if(buffer.length>8192)buffer='';}
-  }catch(e){$('status').textContent='连接结束：'+e.message;}
+  }catch(e){$('status').textContent='Connection ended: '+e.message;}
   finally{
     running=false;if(reader){reader.releaseLock();reader=null;}if(port){try{await port.close();}catch(e){}port=null;}
     $('connect').disabled=false;$('disconnect').disabled=true;
-    if(!$('status').textContent.startsWith('连接结束'))$('status').textContent='已断开';
-    latest=null;for(const id of ['distance','amplitude','sound'])$(id).textContent='—';$('rangeState').textContent='等待连接';$('mean').textContent='平均电压 — · DO —';
+    if(!$('status').textContent.startsWith('Connection ended'))$('status').textContent='Disconnected';
+    latest=null;for(const id of ['distance','amplitude','sound','classification'])$(id).textContent='—';$('rangeState').textContent='Waiting for connection';$('mean').textContent='Mean voltage — · DO —';
   }
 }
 $('connect').onclick=connect;$('disconnect').onclick=async()=>{running=false;if(reader)await reader.cancel();};
-$('active').onchange=display;$('threshold').oninput=display;
+$('active').onchange=()=>{if(running&&performance.now()-lastReceived<1500)display();};$('threshold').oninput=$('active').onchange;
 function plot(id,key,color,minimum){
   const canvas=$(id),ratio=devicePixelRatio||1,w=canvas.clientWidth,h=200;
   if(canvas.width!==Math.round(w*ratio)||canvas.height!==Math.round(h*ratio)){canvas.width=Math.round(w*ratio);canvas.height=Math.round(h*ratio);}
@@ -67,5 +76,5 @@ function plot(id,key,color,minimum){
   c.strokeStyle=color;c.lineWidth=2;c.beginPath();let drawing=false,previous=0;
   for(const p of points){if(p[key]<0){drawing=false;continue;}const x=48+(1-(now-p.t)/20000)*(w-48),y=172-p[key]/maximum*160;if(!drawing||p.t-previous>1500)c.moveTo(x,y);else c.lineTo(x,y);drawing=true;previous=p.t;}c.stroke();
 }
-setInterval(()=>{if(running&&lastReceived&&performance.now()-lastReceived>1500){$('status').textContent='数据中断 · 检查 USB 和程序';for(const id of ['distance','amplitude','sound'])$(id).textContent='—';$('rangeState').textContent='数据已过期';}plot('micPlot','m','#57dfba',0.1);plot('rangePlot','d','#76a9ff',50);},100);
+setInterval(()=>{if(running&&lastReceived&&performance.now()-lastReceived>1500){$('status').textContent='Data interrupted · Check USB and sketch';for(const id of ['distance','amplitude','sound','classification'])$(id).textContent='—';$('rangeState').textContent='Data is stale';}plot('micPlot','m','#57dfba',0.1);plot('rangePlot','d','#76a9ff',50);},100);
 </script></html>
