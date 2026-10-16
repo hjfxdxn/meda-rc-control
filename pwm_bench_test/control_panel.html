@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MEDA Bench Control</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #101827; color: #eef3fb; font: 17px system-ui, sans-serif; }
+  main { max-width: 760px; margin: 40px auto; padding: 24px; }
+  h1 { margin-bottom: 8px; }
+  p { color: #b9c7db; line-height: 1.6; }
+  .card { padding: 24px; background: #1d293b; border-radius: 18px; margin: 20px 0; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+  button { padding: 16px 22px; border: 0; border-radius: 10px; background: #b4d7ff; color: #102139; font: bold 16px system-ui; cursor: pointer; }
+  button:disabled { opacity: .35; cursor: default; }
+  button:focus-visible { outline: 3px solid white; outline-offset: 4px; }
+  #neutral { background: #ffbdad; width: 100%; }
+  #value { font-size: 46px; font-weight: 700; }
+  #status { color: #c5e4ff; }
+  input[type=range] { width: 100%; margin: 24px 0; accent-color: #b4d7ff; touch-action: none; }
+  input[type=number] { padding: 10px; width: 110px; font: inherit; }
+  pre { background: #080f1a; padding: 16px; border-radius: 10px; height: 220px; overflow: auto; white-space: pre-wrap; font-size: 13px; }
+</style>
+<main>
+  <h1>MEDA Bench Control</h1>
+  <p>Arduino UNO R4 WiFi · TEU-105BK · USB serial at 115200 baud</p>
+  <p>Lift the wheels. Close Arduino Serial Monitor before connecting. Upload the matching sketch first. Neutral is a signal request, not a verified brake.</p>
+  <div class="row"><button id="connect">Connect USB</button><button id="disconnect" disabled>Disconnect</button></div>
+  <div id="status" role="status">Disconnected</div>
+  <section class="card">
+    <div>Last firmware-reported throttle offset</div>
+    <div id="value" aria-live="polite">—</div>
+    <p>Positive: forward side · Negative: reverse/brake side · Limit ±150 µs</p>
+    <label for="scale">Slider scale (µs per 1%)</label>
+    <input id="scale" type="number" min="0.1" max="1.5" step="0.1" value="1.2">
+    <p id="rangeInfo">Full travel: ±120 µs</p>
+    <label for="throttle">Reverse / brake ← 0 → Forward</label>
+    <input id="throttle" type="range" min="-100" max="100" step="1" value="0" disabled>
+    <div id="requested">Slider: 0% · Requested offset: 0 µs · Pulse: 1530 µs</div>
+    <button id="neutral" data-command="n" disabled>NEUTRAL / Space</button>
+    <p>Hold and drag to apply throttle. Release to return to neutral. Arrow keys work while held on the slider. Firmware returns to neutral after 2 seconds without commands.</p>
+  </section>
+  <section class="card">
+    <h2>Steering</h2>
+    <p id="steeringValue" aria-live="polite">Last firmware report: —</p>
+    <label for="steeringCenter">Steering center (µs)</label>
+    <input id="steeringCenter" type="number" min="1422" max="1622" step="1" value="1522">
+    <div class="row">
+      <button id="centerMinus" disabled>Center −1 µs</button>
+      <button id="centerApply" disabled>Apply center</button>
+      <button id="centerPlus" disabled>Center +1 µs</button>
+    </div>
+    <p>Adjust until the wheels point straight. Applying center resets throttle. Range: 1422–1622 µs. This setting lasts until Arduino resets; record the value to make it the firmware default.</p>
+    <label for="steeringScale">Steering scale (µs per 1%)</label>
+    <input id="steeringScale" type="number" min="0.1" max="4.0" step="0.05" value="0.5">
+    <p id="steeringRange">Full travel: ±50 µs</p>
+    <label for="steeringSlider">Left ← Center → Right</label>
+    <input id="steeringSlider" type="range" min="-100" max="100" step="1" value="0" disabled>
+    <div id="steeringRequested">Slider: 0% · Requested offset: 0 µs · Pulse: 1522 µs</div>
+    <p>Hold and drag; release to the calibrated center. Software offset limit: ±400 µs; mechanical limits have not been measured. Recheck travel after changing center. Increase scale gradually and release if the linkage binds or the servo keeps buzzing. This bench panel tests one channel at a time: using either slider centers the other. Changing scale or leaving the window returns both to neutral.</p>
+  </section>
+  <pre id="log" aria-label="Serial log"></pre>
+</main>
+<script>
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const controls = [...document.querySelectorAll('[data-command]')];
+  let port, reader, writer, readingTask;
+  let closing = false;
+  let holding = false;
+  let steeringHolding = false;
+  let confirmedCenter = 1522;
+  let commandEpoch = 0;
+  let writeQueue = Promise.resolve();
+  const encoder = new TextEncoder();
+
+  function log(message) {
+    $('log').textContent = ($('log').textContent + message + '\n').slice(-16000);
+    $('log').scrollTop = $('log').scrollHeight;
+  }
+  function enabled(connected) {
+    $('throttle').disabled = !connected;
+    $('steeringSlider').disabled = !connected;
+    ['centerMinus', 'centerApply', 'centerPlus'].forEach(id => $(id).disabled = !connected);
+    if (!connected) resetSlider();
+    controls.forEach(button => button.disabled = !connected);
+    $('disconnect').disabled = !connected;
+    $('connect').disabled = connected;
+  }
+  function send(command) {
+    if (!writer || closing) return Promise.resolve();
+    const epoch = commandEpoch;
+    writeQueue = writeQueue.then(() => {
+      if (epoch === commandEpoch && writer) return writer.write(encoder.encode(command + '\n'));
+    }).catch(error => {
+      log('Write error: ' + error.message); enabled(false);
+      $('connect').disabled = true; $('disconnect').disabled = false;
+    });
+    return writeQueue;
+  }
+  function scaleValue() {
+    const value = Number($('scale').value);
+    return Number.isFinite(value) ? Math.min(1.5, Math.max(0.1, value)) : 1.2;
+  }
+  function offsetValue() {
+    return Math.max(-150, Math.min(150, Math.round(Number($('throttle').value) * scaleValue())));
+  }
+  function showRequest() {
+    const offset = offsetValue();
+    $('requested').textContent = `Slider: ${$('throttle').value}% · Requested offset: ${offset} µs · Pulse: ${1530 - offset} µs`;
+    $('rangeInfo').textContent = `Full travel: ±${Math.round(100 * scaleValue())} µs`;
+    const steeringOffset = steeringOffsetValue();
+    $('steeringRange').textContent = `Full travel: ±${Math.round(100 * steeringScaleValue())} µs`;
+    $('steeringRequested').textContent = `Slider: ${$('steeringSlider').value}% · Requested offset: ${steeringOffset} µs · Pulse: ${confirmedCenter + steeringOffset} µs`;
+  }
+  function steeringScaleValue() {
+    const value = Number($('steeringScale').value);
+    return Number.isFinite(value) ? Math.min(4.0, Math.max(0.1, value)) : 0.5;
+  }
+  function steeringOffsetValue() {
+    return Math.max(-400, Math.min(400, Math.round(Number($('steeringSlider').value) * steeringScaleValue())));
+  }
+  function resetSlider() {
+    holding = false;
+    steeringHolding = false;
+    commandEpoch++;
+    $('throttle').value = 0;
+    $('steeringSlider').value = 0;
+    showRequest();
+  }
+  function stopThrottle() { resetSlider(); return send('n'); }
+  function report(line) {
+    log(line);
+    const centerMatch = line.match(/Steering center \(us\): (\d+)/);
+    if (centerMatch) {
+      confirmedCenter = Number(centerMatch[1]);
+      $('steeringCenter').value = confirmedCenter;
+      showRequest();
+    }
+    const match = line.match(/Throttle offset \(us\): (-?\d+)/);
+    if (match) $('value').textContent = match[1] + ' µs';
+    const steeringMatch = line.match(/Steering offset \(us\): (-?\d+) \| Servo pulse \(us\): (\d+)/);
+    if (steeringMatch) $('steeringValue').textContent = `Reported offset: ${steeringMatch[1]} µs · Pulse: ${steeringMatch[2]} µs`;
+    if (/neutral requested|Neutral requested|Ready at neutral/.test(line)) {
+      $('value').textContent = '0 µs (neutral requested)';
+      $('steeringValue').textContent = `0 µs · Pulse: ${confirmedCenter} µs (center requested)`;
+    }
+    if (/failed|fault/i.test(line)) {
+      resetSlider();
+      $('throttle').disabled = true;
+      $('steeringSlider').disabled = true;
+      ['centerMinus', 'centerApply', 'centerPlus'].forEach(id => $(id).disabled = true);
+      controls.forEach(button => button.disabled = button.dataset.command !== 'n');
+      $('status').textContent = 'Firmware fault: disconnect ESC power';
+    }
+  }
+  async function readSerial() {
+    const decoder = new TextDecoder();
+    let pending = '';
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        pending += decoder.decode(value, { stream: true });
+        const lines = pending.split('\n');
+        pending = lines.pop();
+        lines.forEach(line => report(line.trim()));
+      }
+    } catch (error) {
+      if (!closing) log('Read error: ' + error.message);
+    } finally {
+      reader.releaseLock();
+      reader = null;
+      if (!closing) {
+        enabled(false);
+        $('connect').disabled = true;
+        $('disconnect').disabled = false;
+        $('status').textContent = 'Serial connection lost. Disconnect ESC power, then click Disconnect.';
+        $('value').textContent = 'Unknown';
+      }
+    }
+  }
+  async function disconnect() {
+    await stopThrottle();
+    closing = true;
+    try {
+      if (reader) await reader.cancel();
+      if (readingTask) await readingTask;
+      if (writer) { writer.releaseLock(); writer = null; }
+      if (port) await port.close();
+    } catch (error) { log('Disconnect: ' + error.message); }
+    port = null;
+    closing = false;
+    enabled(false);
+    $('status').textContent = 'Disconnected';
+    $('value').textContent = '—';
+  }
+  $('connect').onclick = async () => {
+    if (!navigator.serial) {
+      $('status').textContent = 'Open this file in desktop Chrome or Edge with Web Serial support.';
+      return;
+    }
+    $('connect').disabled = true;
+    try {
+      port = await navigator.serial.requestPort();
+      await port.open({ baudRate: 115200 });
+      writer = port.writable.getWriter();
+      reader = port.readable.getReader();
+      readingTask = readSerial();
+      enabled(true);
+      $('status').textContent = 'Connected. Wait for the board to start, then press NEUTRAL.';
+      await send('n');
+    } catch (error) {
+      log('Connection: ' + error.message);
+      await disconnect();
+    }
+  };
+  $('disconnect').onclick = disconnect;
+  function applyCenter(delta = 0) {
+    const value = delta ? confirmedCenter + delta : Number($('steeringCenter').value);
+    if (!Number.isInteger(value) || value < 1422 || value > 1622) {
+      log('Center must be an integer from 1422 to 1622 us.'); return;
+    }
+    resetSlider(); send('c' + value);
+  }
+  $('centerMinus').onclick = () => applyCenter(-1);
+  $('centerPlus').onclick = () => applyCenter(1);
+  $('centerApply').onclick = () => applyCenter();
+  controls.forEach(button => button.onclick = () => {
+    resetSlider(); send(button.dataset.command);
+  });
+  $('scale').addEventListener('input', () => { stopThrottle(); });
+  $('scale').addEventListener('change', () => {
+    $('scale').value = scaleValue(); showRequest();
+  });
+  $('throttle').addEventListener('pointerdown', event => {
+    if ($('throttle').disabled || event.button !== 0) return;
+    resetSlider(); send('n');
+    holding = true;
+    $('throttle').setPointerCapture(event.pointerId);
+  });
+  $('throttle').addEventListener('input', () => {
+    if (!holding) { resetSlider(); return; }
+    showRequest();
+  });
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(name => {
+    $('throttle').addEventListener(name, () => { if (holding) stopThrottle(); });
+  });
+  const sliderKeys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'];
+  $('throttle').addEventListener('keydown', event => {
+    if (sliderKeys.includes(event.key) && !$('throttle').disabled && !holding) {
+      resetSlider(); send('n'); holding = true;
+    }
+  });
+  $('throttle').addEventListener('keyup', event => {
+    if (sliderKeys.includes(event.key)) stopThrottle();
+  });
+  $('throttle').addEventListener('blur', () => { if (holding) stopThrottle(); });
+  $('steeringScale').addEventListener('input', () => { stopThrottle(); });
+  $('steeringScale').addEventListener('change', () => {
+    $('steeringScale').value = steeringScaleValue(); showRequest();
+  });
+  $('steeringSlider').addEventListener('pointerdown', event => {
+    if ($('steeringSlider').disabled || event.button !== 0) return;
+    resetSlider(); send('n'); steeringHolding = true;
+    $('steeringSlider').setPointerCapture(event.pointerId);
+  });
+  $('steeringSlider').addEventListener('input', () => {
+    if (!steeringHolding) { resetSlider(); return; }
+    showRequest();
+  });
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(name => {
+    $('steeringSlider').addEventListener(name, () => { if (steeringHolding) stopThrottle(); });
+  });
+  $('steeringSlider').addEventListener('keydown', event => {
+    if (sliderKeys.includes(event.key) && !$('steeringSlider').disabled && !steeringHolding) {
+      resetSlider(); send('n'); steeringHolding = true;
+    }
+  });
+  $('steeringSlider').addEventListener('keyup', event => {
+    if (sliderKeys.includes(event.key)) stopThrottle();
+  });
+  $('steeringSlider').addEventListener('blur', () => { if (steeringHolding) stopThrottle(); });
+  setInterval(() => {
+    if (holding && !$('throttle').disabled && !document.hidden) send('t' + offsetValue());
+    if (steeringHolding && !$('steeringSlider').disabled && !document.hidden) send('s' + steeringOffsetValue());
+  }, 100);
+  document.addEventListener('keydown', event => {
+    if (event.repeat || event.ctrlKey || event.altKey || event.metaKey) return;
+    const key = event.key.toLowerCase();
+    const command = key === ' ' ? 'n' : key;
+    const button = controls.find(item => item.dataset.command === command);
+    if (event.target.tagName === 'INPUT' && event.target.type === 'number' && key !== ' ') return;
+    if (button && !button.disabled) { event.preventDefault(); resetSlider(); send(command); }
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopThrottle();
+  });
+  window.addEventListener('blur', () => { if (holding || steeringHolding) stopThrottle(); });
+  window.addEventListener('pagehide', () => { stopThrottle(); });
+  showRequest();
+</script>
+</html>
