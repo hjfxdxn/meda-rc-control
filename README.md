@@ -2,6 +2,8 @@
 
 Three independent test sketches. The sensor and PWM tests have browser interfaces; the sound-triggered ESC test runs autonomously. Upload one `.ino` sketch at a time to the Arduino UNO R4 WiFi. Uploading another sketch replaces the program on the board.
 
+Vehicle records: [Steering calibration](STEERING_CALIBRATION.md) and [ESC configuration and calibration](ESC_CALIBRATION.md). ESC parameters must be verified separately for each car.
+
 | Test | Arduino sketch | Browser interface | Serial baud rate |
 |---|---|---|---|
 | Microphone + HC-SR04 | [microphone_test.ino](microphone_test/microphone_test.ino) | [sensor_monitor.html](microphone_test/sensor_monitor.html) | 115200 |
@@ -40,6 +42,8 @@ The ultrasonic sensor uses its default GPIO mode and takes measurements at least
 Reference: [HC-SR04 V2020 manual](https://akizukidenshi.com/goodsaffix/hc-sr04_v20.pdf).
 
 ## PWM bench test
+
+See the [CAL2 calibration panel guide](pwm_bench_test/README.md) for expanded slider scales, editable ESC neutral, and car-specific steering limits. Upload the updated sketch before using the updated HTML panel.
 
 Connect the steering signal to D5 and the ESC signal to D6, with a common ground. Power the servo and ESC according to their specifications; do not power them from Arduino GPIO pins. Lift the driven wheels before applying power.
 

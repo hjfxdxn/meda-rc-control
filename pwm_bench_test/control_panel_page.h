@@ -1,0 +1,392 @@
+#pragma once
+// Generated from control_panel.html by embed_panel.py.
+const char kControlPanelHtml[] = R"MEDAPANEL(<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MEDA ESC & Steering Calibration</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #101827; color: #eef3fb; font: 17px system-ui, sans-serif; }
+  main { max-width: 760px; margin: 40px auto; padding: 24px; }
+  h1 { margin-bottom: 8px; }
+  p { color: #b9c7db; line-height: 1.6; }
+  .card { padding: 24px; background: #1d293b; border-radius: 18px; margin: 20px 0; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+  button { padding: 16px 22px; border: 0; border-radius: 10px; background: #b4d7ff; color: #102139; font: bold 16px system-ui; cursor: pointer; }
+  button:disabled { opacity: .35; cursor: default; }
+  button:focus-visible { outline: 3px solid white; outline-offset: 4px; }
+  #neutral { background: #ffbdad; width: 100%; }
+  #value { font-size: 46px; font-weight: 700; }
+  #status { color: #c5e4ff; }
+  input[type=range] { width: 100%; margin: 24px 0; accent-color: #b4d7ff; touch-action: none; }
+  input[type=number] { padding: 10px; width: 110px; font: inherit; }
+  pre { background: #080f1a; padding: 16px; border-radius: 10px; height: 220px; overflow: auto; white-space: pre-wrap; font-size: 13px; }
+</style>
+<main>
+  <h1>MEDA ESC & Steering Calibration</h1>
+  <p>Arduino UNO R4 WiFi · Cars 81 / 82 / 83 · USB at 115200 baud or local Wi-Fi access point</p>
+  <p>Lift the wheels. Close Arduino Serial Monitor before connecting. Upload the matching sketch first. Neutral is a signal request, not a verified brake.</p>
+  <div class="row"><button id="connect">Connect USB</button><button id="connectWifi">Connect Wi-Fi</button><button id="disconnect" disabled>Disconnect</button></div>
+  <p id="vehicle">Wi-Fi: join the car hotspot, then open http://192.168.4.1. Confirm the car before control.</p>
+  <div id="status" role="status">Disconnected</div>
+  <section class="card">
+    <div>Last firmware-reported throttle offset</div>
+    <div id="value" aria-live="polite">—</div>
+    <p>Positive: shorter pulse · Negative: longer pulse. Measure physical direction. Output: 1000–2000 µs. Percent is slider travel, not measured speed.</p>
+    <label for="escCenter">ESC neutral (µs)</label><input id="escCenter" type="number" min="1000" max="2000" step="1" value="1530"><button id="escApply" disabled>Apply ESC neutral</button><p>This changes the Arduino command, not internal ESC calibration. Wait for ESC initialization after power-on.</p><label for="scale">Slider scale (µs per 1%)</label>
+    <input id="scale" type="number" min="0.1" max="6.0" step="0.1" value="1.2">
+    <p id="rangeInfo">Full travel: ±120 µs</p>
+    <label for="throttle">Longer pulse ← Neutral → Shorter pulse</label>
+    <input id="throttle" type="range" min="-100" max="100" step="1" value="0" disabled>
+    <div id="requested">Slider: 0% · Requested offset: 0 µs · Pulse: 1530 µs</div>
+    <button id="neutral" data-command="n" disabled>NEUTRAL / Space</button>
+    <p>Hold and drag to apply throttle. Release to return to neutral. Arrow keys work while held on the slider. Nominal command timeout: USB 2 seconds, Wi-Fi 0.5 seconds. A Wi-Fi timeout requires reconnection.</p>
+  </section>
+  <section class="card">
+    <h2>Steering</h2>
+    <label for="carProfile">Recorded steering profile</label>
+    <select id="carProfile"><option value="custom">Custom / narrow startup range</option><option value="81">81: 1200 / 1449 / 1660 µs</option><option value="82">82: 1150 / 1550 / 1950 µs</option><option value="83">83: 1150 / 1700 / 1950 µs</option></select>
+    <p>Steering profiles do not change ESC calibration. Recorded endpoints have no verified clearance margin.</p>
+    <label for="leftLimit">Left limit (µs)</label><input id="leftLimit" type="number" min="900" max="2100" value="1472">
+    <label for="rightLimit">Right limit (µs)</label><input id="rightLimit" type="number" min="900" max="2100" value="1572">
+    <button id="profileApply" disabled>Apply center and limits</button>
+    <p id="steeringValue" aria-live="polite">Last firmware report: —</p>
+    <label for="steeringCenter">Steering center (µs)</label>
+    <input id="steeringCenter" type="number" min="900" max="2100" step="1" value="1522">
+    <div class="row">
+      <button id="centerMinus" disabled>Center −1 µs</button>
+      <button id="centerApply" disabled>Apply center</button>
+      <button id="centerPlus" disabled>Center +1 µs</button>
+    </div>
+    <p>Adjust until the wheels point straight. Applying center resets throttle. Center must lie within the applied limits. This setting lasts until Arduino resets; record the value to make it the firmware default.</p>
+    <label for="steeringScale">Steering scale (µs per 1%)</label>
+    <input id="steeringScale" type="number" min="0.1" max="8.0" step="0.05" value="0.5">
+    <p id="steeringRange">Full travel: ±50 µs</p>
+    <label for="steeringSlider">Left ← Center → Right</label>
+    <input id="steeringSlider" type="range" min="-100" max="100" step="1" value="0" disabled>
+    <div id="steeringRequested">Slider: 0% · Requested offset: 0 µs · Pulse: 1522 µs</div>
+    <p>Hold and drag; release to the calibrated center. Scale up to 8 µs/% (±800 µs), clipped to firmware limits. Startup has a narrow range until a profile is applied. Recheck travel after changing center. Increase scale gradually and release if the linkage binds or the servo keeps buzzing. This bench panel tests one channel at a time: using either slider centers the other. Changing scale or leaving the window returns both to neutral.</p>
+  </section>
+  <pre id="log" aria-label="Serial log"></pre>
+</main>
+<script>
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const controls = [...document.querySelectorAll('[data-command]')];
+  let port, reader, writer, readingTask;
+  let wifiToken = 0, wifiSequence = 0;
+  async function wifiRequest(path) {
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), 750);
+    try {
+      const response = await fetch(path, {method: 'POST', cache: 'no-store', signal: abort.signal});
+      const text = await response.text();
+      if (!response.ok) throw new Error(text);
+      return text;
+    } finally { clearTimeout(timer); }
+  }
+  function wifiLost(error) {
+    wifiToken = 0; protocolReady = false; enabled(false);
+    $('status').textContent = 'Wi-Fi control lost. Neutral timeout requested by firmware. Reconnect explicitly.';
+    $('value').textContent = 'Unknown'; log(String(error));
+  }
+  $('connectWifi').onclick = async () => {
+    if (!/^https?:$/.test(location.protocol)) {
+      $('status').textContent = 'Join MEDA-Car-81 / 82 / 83 Wi-Fi and open http://192.168.4.1 first.'; return;
+    }
+    $('connectWifi').disabled = true; $('connect').disabled = true;
+    try {
+      protocolReady = false; resetSlider();
+      const text = await wifiRequest('/claim');
+      const token = text.match(/^TOKEN:(\d+)/m);
+      if (!token) throw new Error('Missing control session');
+      wifiToken = Number(token[1]); wifiSequence = 0;
+      text.split('\n').filter(Boolean).forEach(report);
+    } catch (error) { wifiLost(error); }
+  };
+  let closing = false;
+  let holding = false;
+  let steeringHolding = false;
+  let confirmedCenter = 1522, confirmedEsc = 1530;
+  let confirmedLeft = 1472, confirmedRight = 1572;
+  let protocolReady = false;
+  let commandEpoch = 0;
+  let writeQueue = Promise.resolve();
+  let writePending = 0;
+  const encoder = new TextEncoder();
+
+  function log(message) {
+    $('log').textContent = ($('log').textContent + message + '\n').slice(-16000);
+    $('log').scrollTop = $('log').scrollHeight;
+  }
+  function enabled(connected) {
+    $('throttle').disabled = !connected;
+    $('steeringSlider').disabled = !connected;
+    ['centerMinus', 'centerApply', 'centerPlus', 'escApply', 'profileApply'].forEach(id => $(id).disabled = !connected);
+    if (!connected) resetSlider();
+    controls.forEach(button => button.disabled = !connected);
+    $('disconnect').disabled = !connected;
+    $('connect').disabled = connected;
+    $('connectWifi').disabled = connected;
+  }
+  function send(command) {
+    if ((!writer && !wifiToken) || closing) return Promise.resolve();
+    if (/^[ts]/.test(command) && writePending > 0) return writeQueue;
+    const epoch = commandEpoch;
+    writePending++;
+    writeQueue = writeQueue.then(() => {
+      if (epoch !== commandEpoch) return;
+      if (wifiToken) {
+        return wifiRequest(`/cmd?token=${wifiToken}&seq=${++wifiSequence}&c=${command}`)
+          .then(text => text.split('\n').filter(Boolean).forEach(report));
+      }
+      if (writer) return writer.write(encoder.encode(command + '\n'));
+    }).catch(error => {
+      if (wifiToken || !writer) { wifiLost(error); return; }
+      log('Write error: ' + error.message); enabled(false);
+      $('connect').disabled = true; $('disconnect').disabled = false;
+    });
+    writeQueue = writeQueue.finally(() => { writePending--; });
+    return writeQueue;
+  }
+  function scaleValue() {
+    const value = Number($('scale').value);
+    return Number.isFinite(value) ? Math.min(6.0, Math.max(0.1, value)) : 1.2;
+  }
+  function offsetValue() {
+    const raw = Math.round(Number($('throttle').value) * scaleValue());
+    return confirmedEsc - Math.max(1000, Math.min(2000, confirmedEsc - raw));
+  }
+  function showRequest() {
+    const offset = offsetValue();
+    $('requested').textContent = `Slider: ${$('throttle').value}% · Requested offset: ${offset} µs · Pulse: ${confirmedEsc - offset} µs`;
+    $('rangeInfo').textContent = `Requested span: ±${Math.round(100 * scaleValue())} µs · clipped output: ${Math.max(1000, confirmedEsc - Math.round(100 * scaleValue()))}–${Math.min(2000, confirmedEsc + Math.round(100 * scaleValue()))} µs`;
+    const steeringOffset = steeringOffsetValue();
+    $('steeringRange').textContent = `Requested span: ±${Math.round(100 * steeringScaleValue())} µs · applied limits: ${confirmedLeft}–${confirmedRight} µs`;
+    $('steeringRequested').textContent = `Slider: ${$('steeringSlider').value}% · Requested offset: ${steeringOffset} µs · Pulse: ${confirmedCenter + steeringOffset} µs`;
+  }
+  function steeringScaleValue() {
+    const value = Number($('steeringScale').value);
+    return Number.isFinite(value) ? Math.min(8.0, Math.max(0.1, value)) : 0.5;
+  }
+  function steeringOffsetValue() {
+    return Math.max(confirmedLeft, Math.min(confirmedRight, confirmedCenter + Math.round(Number($('steeringSlider').value) * steeringScaleValue()))) - confirmedCenter;
+  }
+  function resetSlider() {
+    holding = false;
+    steeringHolding = false;
+    commandEpoch++;
+    $('throttle').value = 0;
+    $('steeringSlider').value = 0;
+    showRequest();
+  }
+  function stopThrottle() { resetSlider(); return send('n'); }
+  function report(line) {
+    line = line.trim(); // Arduino Print uses CRLF on both USB and Wi-Fi.
+    if (!line) return;
+    log(line);
+    const identity = line.match(/^CAR:(\d+) MAC:([A-F0-9:]+)$/);
+    if (identity) $('vehicle').textContent = `Connected board: Car ${identity[1] === '0' ? 'UNKNOWN (verify MAC)' : identity[1]} · MAC ${identity[2]}. Profiles require manual application.`;
+    const config = line.match(/^CAL2 ESC:(\d+) Center:(\d+) Left:(\d+) Right:(\d+)$/);
+    if (config) {
+      const changed = !protocolReady || Number(config[1]) !== confirmedEsc || Number(config[2]) !== confirmedCenter || Number(config[3]) !== confirmedLeft || Number(config[4]) !== confirmedRight;
+      [, confirmedEsc, confirmedCenter, confirmedLeft, confirmedRight] = config.map(Number);
+      if (changed) {
+      $('escCenter').value = confirmedEsc; $('steeringCenter').value = confirmedCenter;
+      $('leftLimit').value = confirmedLeft; $('rightLimit').value = confirmedRight;
+      }
+      if (!protocolReady) { protocolReady = true; enabled(true); $('status').textContent = 'Calibration firmware connected. Verify vehicle and ESC initialization.'; }
+      showRequest();
+    }
+    const centerMatch = line.match(/Steering center \(us\): (\d+)/);
+    if (centerMatch) {
+      confirmedCenter = Number(centerMatch[1]);
+      $('steeringCenter').value = confirmedCenter;
+      showRequest();
+    }
+    const match = line.match(/Throttle offset \(us\): (-?\d+)/);
+    if (match) $('value').textContent = match[1] + ' µs';
+    const steeringMatch = line.match(/Steering offset \(us\): (-?\d+) \| Servo pulse \(us\): (\d+)/);
+    if (steeringMatch) $('steeringValue').textContent = `Reported offset: ${steeringMatch[1]} µs · Pulse: ${steeringMatch[2]} µs`;
+    if (/neutral requested|Neutral requested|Ready at neutral/.test(line)) {
+      $('value').textContent = '0 µs (neutral requested)';
+      $('steeringValue').textContent = `0 µs · Pulse: ${confirmedCenter} µs (center requested)`;
+    }
+    if (/failed|fault/i.test(line)) {
+      resetSlider();
+      $('throttle').disabled = true;
+      $('steeringSlider').disabled = true;
+      ['centerMinus', 'centerApply', 'centerPlus', 'escApply', 'profileApply'].forEach(id => $(id).disabled = true);
+      controls.forEach(button => button.disabled = button.dataset.command !== 'n');
+      $('status').textContent = 'Firmware fault: disconnect ESC power';
+    }
+  }
+  async function readSerial() {
+    const decoder = new TextDecoder();
+    let pending = '';
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        pending += decoder.decode(value, { stream: true });
+        const lines = pending.split('\n');
+        pending = lines.pop();
+        lines.forEach(line => report(line.trim()));
+      }
+    } catch (error) {
+      if (!closing) log('Read error: ' + error.message);
+    } finally {
+      reader.releaseLock();
+      reader = null;
+      if (!closing) {
+        enabled(false);
+        $('connect').disabled = true;
+        $('disconnect').disabled = false;
+        $('status').textContent = 'Serial connection lost. Disconnect ESC power, then click Disconnect.';
+        $('value').textContent = 'Unknown';
+      }
+    }
+  }
+  async function disconnect() {
+    await stopThrottle();
+    if (wifiToken) await send('q');
+    wifiToken = 0; protocolReady = false;
+    closing = true;
+    try {
+      if (reader) await reader.cancel();
+      if (readingTask) await readingTask;
+      if (writer) { writer.releaseLock(); writer = null; }
+      if (port) await port.close();
+    } catch (error) { log('Disconnect: ' + error.message); }
+    port = null;
+    closing = false;
+    enabled(false);
+    $('status').textContent = 'Disconnected';
+    $('value').textContent = '—';
+  }
+  $('connect').onclick = async () => {
+    if (!navigator.serial) {
+      $('status').textContent = 'Open this file in desktop Chrome or Edge with Web Serial support.';
+      return;
+    }
+    $('connect').disabled = true; $('connectWifi').disabled = true;
+    try {
+      port = await navigator.serial.requestPort();
+      await port.open({ baudRate: 115200 });
+      writer = port.writable.getWriter();
+      reader = port.readable.getReader();
+      readingTask = readSerial();
+      protocolReady = false; enabled(false);
+      $('connect').disabled = true; $('disconnect').disabled = false;
+      $('status').textContent = 'Waiting for CAL2 firmware. Upload the matching updated sketch if controls remain disabled.';
+      await send('n'); await send('?');
+    } catch (error) {
+      log('Connection: ' + error.message);
+      await disconnect();
+    }
+  };
+  $('disconnect').onclick = disconnect;
+  function applyCenter(delta = 0) {
+    const value = delta ? confirmedCenter + delta : Number($('steeringCenter').value);
+    if (!Number.isInteger(value) || value < confirmedLeft || value > confirmedRight) {
+      log('Center must be an integer within applied steering limits.'); return;
+    }
+    resetSlider(); send('c' + value);
+  }
+  $('escApply').onclick = () => {
+    const value = Number($('escCenter').value);
+    if (!Number.isInteger(value) || value < 1000 || value > 2000) { log('ESC neutral must be 1000..2000 us.'); return; }
+    resetSlider(); send('e' + value);
+  };
+  $('carProfile').onchange = () => {
+    stopThrottle();
+    const profiles = {81: [1449,1200,1660],82: [1550,1150,1950],83: [1700,1150,1950]};
+    const profile = profiles[$('carProfile').value];
+    if (profile) { $('steeringCenter').value = profile[0]; $('leftLimit').value = profile[1]; $('rightLimit').value = profile[2]; }
+  };
+  $('profileApply').onclick = () => {
+    const center = Number($('steeringCenter').value), left = Number($('leftLimit').value), right = Number($('rightLimit').value);
+    if (![center,left,right].every(Number.isInteger) || left < 900 || right > 2100 || left >= center || center >= right) { log('Require 900 <= left < center < right <= 2100 us.'); return; }
+    resetSlider(); send(`g${center},${left},${right}`);
+  };
+  $('centerMinus').onclick = () => applyCenter(-1);
+  $('centerPlus').onclick = () => applyCenter(1);
+  $('centerApply').onclick = () => applyCenter();
+  controls.forEach(button => button.onclick = () => {
+    resetSlider(); send(button.dataset.command);
+  });
+  $('scale').addEventListener('input', () => { stopThrottle(); });
+  $('scale').addEventListener('change', () => {
+    $('scale').value = scaleValue(); showRequest();
+  });
+  $('throttle').addEventListener('pointerdown', event => {
+    if ($('throttle').disabled || event.button !== 0) return;
+    resetSlider(); send('n');
+    holding = true;
+    $('throttle').setPointerCapture(event.pointerId);
+  });
+  $('throttle').addEventListener('input', () => {
+    if (!holding) { resetSlider(); return; }
+    showRequest();
+  });
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(name => {
+    $('throttle').addEventListener(name, () => { if (holding) stopThrottle(); });
+  });
+  const sliderKeys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'];
+  $('throttle').addEventListener('keydown', event => {
+    if (sliderKeys.includes(event.key) && !$('throttle').disabled && !holding) {
+      resetSlider(); send('n'); holding = true;
+    }
+  });
+  $('throttle').addEventListener('keyup', event => {
+    if (sliderKeys.includes(event.key)) stopThrottle();
+  });
+  $('throttle').addEventListener('blur', () => { if (holding) stopThrottle(); });
+  $('steeringScale').addEventListener('input', () => { stopThrottle(); });
+  $('steeringScale').addEventListener('change', () => {
+    $('steeringScale').value = steeringScaleValue(); showRequest();
+  });
+  $('steeringSlider').addEventListener('pointerdown', event => {
+    if ($('steeringSlider').disabled || event.button !== 0) return;
+    resetSlider(); send('n'); steeringHolding = true;
+    $('steeringSlider').setPointerCapture(event.pointerId);
+  });
+  $('steeringSlider').addEventListener('input', () => {
+    if (!steeringHolding) { resetSlider(); return; }
+    showRequest();
+  });
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(name => {
+    $('steeringSlider').addEventListener(name, () => { if (steeringHolding) stopThrottle(); });
+  });
+  $('steeringSlider').addEventListener('keydown', event => {
+    if (sliderKeys.includes(event.key) && !$('steeringSlider').disabled && !steeringHolding) {
+      resetSlider(); send('n'); steeringHolding = true;
+    }
+  });
+  $('steeringSlider').addEventListener('keyup', event => {
+    if (sliderKeys.includes(event.key)) stopThrottle();
+  });
+  $('steeringSlider').addEventListener('blur', () => { if (steeringHolding) stopThrottle(); });
+  setInterval(() => {
+    if (holding && !$('throttle').disabled && !document.hidden) send('t' + offsetValue());
+    if (steeringHolding && !$('steeringSlider').disabled && !document.hidden) send('s' + steeringOffsetValue());
+  }, 100);
+  setInterval(() => { if (wifiToken && !holding && !steeringHolding && !writePending && !document.hidden) send('?'); }, 800);
+  document.addEventListener('keydown', event => {
+    if (event.repeat || event.ctrlKey || event.altKey || event.metaKey) return;
+    const key = event.key.toLowerCase();
+    const command = key === ' ' ? 'n' : key;
+    const button = controls.find(item => item.dataset.command === command);
+    if (event.target.tagName === 'INPUT' && event.target.type === 'number' && key !== ' ') return;
+    if (button && !button.disabled) { event.preventDefault(); resetSlider(); send(command); }
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopThrottle();
+  });
+  window.addEventListener('blur', () => { if (holding || steeringHolding) stopThrottle(); });
+  window.addEventListener('pagehide', () => { stopThrottle(); });
+  showRequest();
+</script>
+</html>
+)MEDAPANEL";

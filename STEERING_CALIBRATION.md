@@ -1,5 +1,7 @@
 # Steering calibration
 
+Panel update (2026-10-22): the [CAL2 panel](pwm_bench_test/README.md) now supports these three profiles, including car 83's 1700 us center and asymmetric travel. It enforces independently configured left/right bounds. The older panel limitations and symmetric-scale examples below are retained as historical context, not instructions for the updated panel. Measurements themselves are unchanged.
+
 Record each car separately. Values are RC servo command pulse widths in microseconds (us), not steering angles. Left and right refer to the vehicle's direction of travel.
 
 ## Calibration records
@@ -8,7 +10,11 @@ Record each car separately. Values are RC servo command pulse widths in microsec
 | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
 | 81 | 1449 | 1200 | 1660 | -249 | +211 | 2026-10-09 | User-reported measurements; loaded driving verification pending |
 | 82 | 1550 | 1150 | 1950 | -400 | +400 | 2026-10-09 | User-reported measurements; loaded driving verification pending |
-| 83 | 1700 | 1150 | 1950 | -550 | +250 | 2026-10-09 | User-reported measurements; center alignment and loaded driving verification pending |
+| 83 | 1700 | 1150 | 1950 | -550 | +250 | 2026-10-09 | Historical measurements retained; steering unresponsive as reported on 2026-10-23; wiring suspected, cause unconfirmed |
+
+### Car 83 troubleshooting update (2026-10-23)
+
+The user reports no steering response and suspects a wiring problem. This is not a confirmed diagnosis. Retain the previous 1700 us center and 1150/1950 us boundaries as historical measurements, not a fresh verification. Check servo power, common ground, connector polarity and the D5 signal path before repeating calibration. Current `pwm_bench_test` drives steering on D5; the separate `start_test` sketch does not initialize steering. Do not widen limits to compensate for an unresponsive servo.
 
 ## Car 81
 
