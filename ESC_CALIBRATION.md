@@ -100,3 +100,7 @@ For each test, also record battery voltage/chemistry, motor wiring, unloaded or 
 5. Apply the measured settings to a car-specific firmware profile. Validate braking distance separately under controlled loaded conditions.
 
 All three use an RC command signal, but their internal motor-drive PWM frequency is not the Arduino command repetition rate. Likewise, ESC current ratings do not specify available BEC current or spare battery power for a fan.
+
+## 150 m development presets (2026-10-30)
+
+The WIFI4 sketch uses explicit car 82 settings independent of the controller board identity. Ultra Slow uses the recorded forward onset, 1430 us. Slow 1410 us and Normal 1380 us are editable proposed test values, not measured speeds or full-throttle calibration. Reverse onset 1580 us is prefilled. Neutral 1530 us comes from the previous bench program and remains provisional for car 82. Motor output is enabled for standalone sound-start trials. These presets do not replace the TBD neutral/calibration records above.

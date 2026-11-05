@@ -1,6 +1,6 @@
 # MEDA RC Control — UNO R4 WiFi Test Programs
 
-Three independent test sketches. The sensor and PWM tests have browser interfaces; the sound-triggered ESC test runs autonomously. Upload one `.ino` sketch at a time to the Arduino UNO R4 WiFi. Uploading another sketch replaces the program on the board.
+Bench tests and a car 82 autonomous 150 m development sketch. The sensor and PWM tests have browser interfaces; the sound-triggered ESC test runs autonomously. Upload one `.ino` sketch at a time to the Arduino UNO R4 WiFi. Uploading another sketch replaces the program on the board.
 
 Vehicle records: [Steering calibration](STEERING_CALIBRATION.md) and [ESC configuration and calibration](ESC_CALIBRATION.md). ESC parameters must be verified separately for each car.
 
@@ -9,6 +9,7 @@ Vehicle records: [Steering calibration](STEERING_CALIBRATION.md) and [ESC config
 | Microphone + HC-SR04 | [microphone_test.ino](microphone_test/microphone_test.ino) | [sensor_monitor.html](microphone_test/sensor_monitor.html) | 115200 |
 | Sound-triggered ESC reverse test | [start_test.ino](start_test/start_test.ino) | Serial Monitor | 115200 |
 | ESC + steering servo PWM | [pwm_bench_test.ino](pwm_bench_test/pwm_bench_test.ino) | [control_panel.html](pwm_bench_test/control_panel.html) | 115200 |
+| 150 m development (sound start, motor enabled) | [race_150m.ino](race_150m/race_150m.ino) | [Wi-Fi setup](race_150m/README.md) | 115200 |
 
 ## Getting started
 
