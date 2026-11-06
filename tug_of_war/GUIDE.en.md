@@ -32,7 +32,7 @@ Connect the ESC signal to **D6** (100 Hz), steering to **D5** (50 Hz), and the m
 
 1. Face a reflector toward the front sensor. For the first bench test, place cardboard about 50–100 cm in front. The sensor needs a valid echo at startup and throughout the pull.
 2. Power on in quiet surroundings. The ESC holds neutral for three seconds. Three consecutive valid windows without the target tone arm the detector. **Wait for the onboard LED to light before sounding the whistle.**
-3. The detector samples at 10 kHz in 256 ms windows. Two consecutive matches to the roughly 3.2 kHz carrier shared by RA0020 tones A and B trigger a front-range check. If it passes, the ESC receives the forward pulse in the table. Similar high-frequency sounds can also trigger the detector.
+3. The detector samples at 10 kHz in 256 ms windows. Two consecutive matches to the roughly 3.2 kHz carrier shared by RA0020 tones A and B trigger a front-range check. If it passes, the ESC starts the acceleration ramp described below. Similar high-frequency sounds can also trigger the detector.
 
 ## Stopping and resetting
 
@@ -47,3 +47,7 @@ Whistle start is the default. To enable the backup option, set `ENABLE_RESET_BAC
 Record three tests for each chassis. (1) With the rope under load, measure the time from each whistle tone to first wheel motion. Both must be within one second. (2) Maintain a valid echo throughout a pull and record the neutral command at ten seconds and actual wheel stop. (3) In a separate pull, bring the cardboard close before ten seconds and measure the remaining clearance at rest. The 20 cm threshold is a trial setting. Adjust it using measured stopping distance. Both sketches compiled and passed recorded-audio and simulated stop tests. Record the physical results separately for each car.
 
 Arrive at least five minutes before the match. Check that the carabiner attaches, and bring the design, stopping-distance calculation and pre-test video for the TA/SA inspection. [Course rules](https://sites.google.com/edu.teu.ac.jp/applied-creative-mecha2026/競技/綱引き競技ルール力比べ#h.sl9okkvpmokx)
+
+## Acceleration update
+
+Car 81 launches at 1240 us; car 82 at 1330 us. Both ramp to 1100 us over 300 ms, then hold. Smaller pulses request more forward throttle. START_US, PULL_US and RAMP_US configure the ramp. These are trial settings, not calibrated full throttle. Table values remain measured onset records. All stops remain active during acceleration; the 10-second deadline starts with the first drive command.

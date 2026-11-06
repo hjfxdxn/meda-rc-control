@@ -6,7 +6,10 @@
 
 // Car 82: Hobbywing QuicRun WP 1060 Brushed. Verify neutral and loaded starting torque on this chassis.
 constexpr uint32_t NEUTRAL_US = 1530;
-constexpr int PULL_US = 1430;
+constexpr int START_US = 1330; // Trial launch pulse beyond measured onset.
+constexpr int PULL_US = 1100; // Trial strong forward command; not a calibrated endpoint.
+constexpr uint32_t RAMP_US = 300000;
+static_assert(PULL_US >= 1000 && PULL_US <= START_US && START_US < NEUTRAL_US, "Invalid forward ramp");
 constexpr uint32_t CENTER_US = 1550;
 constexpr uint8_t TRIG = 8, ECHO = 12; // Front HC-SR04 on J7.
 constexpr float STOP_CM = 20.0f; // Trial distance; measure stopping margin under load.
@@ -18,6 +21,7 @@ enum class Phase { Settling, Clear, Armed, Pulling, Stopped };
 Phase phase = Phase::Settling;
 unsigned clearWindows = 0, matchWindows = 0;
 uint32_t settledAt, startedAt, lastPing;
+int lastDriveUs = START_US;
 bool escReady = false;
 
 // The left seven columns show the chassis. The right four show its state.
@@ -80,7 +84,8 @@ void startPull() {
   if (!rangeClear()) { stopPull("front obstacle or missing echo at start"); return; }
   if (Serial.available()) return;
   startedAt = micros();
-  if (!esc.pulseWidth_us(PULL_US)) { stopPull("ESC output fault"); return; }
+  if (!esc.pulseWidth_us(START_US)) { stopPull("ESC output fault"); return; }
+  lastDriveUs = START_US;
   lastPing = startedAt;
   phase = Phase::Pulling;
   showStatus(DRIVE_MARK);
@@ -149,6 +154,14 @@ void loop() {
   }
   if (phase != Phase::Pulling) { listenForWhistle(); return; }
   uint32_t now = micros();
+  // Non-blocking ramp: stop checks above always take priority.
+  uint32_t elapsed = uint32_t(now - startedAt);
+  int requested = elapsed >= RAMP_US ? PULL_US
+      : START_US - int(uint32_t(START_US - PULL_US) * elapsed / RAMP_US);
+  if (requested != lastDriveUs) {
+    if (!esc.pulseWidth_us(requested)) { stopPull("ESC ramp output fault"); return; }
+    lastDriveUs = requested;
+  }
   // Keep the final deadline free of blocking echo acquisition.
   if (uint32_t(now-startedAt) >= RUN_US-ECHO_TIMEOUT_US-2000) return;
   if (uint32_t(now-lastPing) < PING_INTERVAL_US) return;

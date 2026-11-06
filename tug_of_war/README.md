@@ -38,3 +38,7 @@ Arrive at least five minutes before the match, with the rope carabiner attachabl
 | Test video, design and stopping calculation | Pending | Pending |
 
 For the stopping calculation, measure approach speed v in m/s and travel from the neutral request to rest in metres. Add v times the worst measured sensor/loop response time in seconds, the sensor-to-bumper offset, and a clearance margin. Compare the resulting distance in metres to the configured 0.20 m trigger. The software polls at 60 ms intervals with a 25 ms echo timeout; verify timing and actual stopping distance on both chassis. For whistle timing, two full windows take 0.512 s; a partial first window can add up to 0.256 s, before processing, range checking, ESC response and wheel motion. Use video to measure the whole interval.
+
+## Acceleration update
+
+Car 81 launches at 1240 us; car 82 at 1330 us. Both ramp to 1100 us over 300 ms, then hold. Smaller pulses request more forward throttle. START_US, PULL_US and RAMP_US configure the ramp. These are trial settings, not calibrated full throttle. Table values remain measured onset records. All stops remain active during acceleration; the 10-second deadline starts with the first drive command.
