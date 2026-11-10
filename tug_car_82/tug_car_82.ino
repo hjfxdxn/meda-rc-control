@@ -2,7 +2,7 @@
 #include <Arduino.h>
 #include <pwm.h>
 #include <Arduino_LED_Matrix.h>
-#include "ra0020_classifier.h"
+#include <math.h>
 
 // Car 82: Hobbywing QuicRun WP 1060 Brushed. Verify neutral and loaded starting torque on this chassis.
 constexpr uint32_t NEUTRAL_US = 1530;
@@ -15,8 +15,7 @@ constexpr uint8_t TRIG = 8, ECHO = 12; // Front HC-SR04 on J7.
 constexpr float STOP_CM = 20.0f; // Trial distance; measure stopping margin under load.
 constexpr uint32_t RUN_US = 10000000, PING_INTERVAL_US = 60000, ECHO_TIMEOUT_US = 25000;
 PwmOut esc(D6), steering(D5);
-WhistleClassifier detector;
-uint16_t samples[AUDIO_SAMPLES];
+constexpr float SOUND_RMS_THRESHOLD = 10.0f; // 12-bit ADC counts, AC RMS.
 enum class Phase { Settling, Clear, Armed, Pulling, Stopped };
 Phase phase = Phase::Settling;
 unsigned clearWindows = 0, matchWindows = 0;
@@ -64,13 +63,14 @@ void stopPull(const char* reason) {
 }
 
 bool rangeClear() {
-  if (digitalRead(ECHO) == HIGH) return false;
+  // A missing or invalid echo is unknown, not a near obstacle.
+  if (digitalRead(ECHO) == HIGH) return true;
   digitalWrite(TRIG, HIGH);
   delayMicroseconds(10);
   digitalWrite(TRIG, LOW);
   unsigned long width = pulseIn(ECHO, HIGH, ECHO_TIMEOUT_US);
   float cm = width * 0.01715f;
-  return cm > STOP_CM && cm <= 400.0f;
+  return width == 0 || cm >= STOP_CM; // Stop only for a measured distance below 20 cm.
 }
 
 // Optional backup: build with this flag enabled AND select D4 to GND before
@@ -81,7 +81,7 @@ constexpr uint8_t BACKUP_SELECT = 4;
 bool manualSelected = false;
 
 void startPull() {
-  if (!rangeClear()) { stopPull("front obstacle or missing echo at start"); return; }
+  if (!rangeClear()) { stopPull("front obstacle below 20 cm at start"); return; }
   if (Serial.available()) return;
   startedAt = micros();
   if (!esc.pulseWidth_us(START_US)) { stopPull("ESC output fault"); return; }
@@ -89,34 +89,42 @@ void startPull() {
   lastPing = startedAt;
   phase = Phase::Pulling;
   showStatus(DRIVE_MARK);
+  if (Serial) Serial.println("START: forward command issued; ramp to 1100 us");
 }
 
 void listenForWhistle() {
+  // Measure AC RMS over approximately 50 ms. No frequency or jitter gate.
+  int64_t sum = 0;
+  uint64_t sumSquares = 0;
   uint32_t due = micros();
-  unsigned lateSamples = 0;
-  bool timingOK = true;
-  for (int i = 0; i < AUDIO_SAMPLES; ++i) {
+  for (unsigned i = 0; i < 500; ++i) {
     while (int32_t(micros() - due) < 0) {}
-    uint32_t late = micros() - due;
-    if (late > 25) ++lateSamples;
-    if (late >= 100) timingOK = false;
-    samples[i] = analogRead(A0);
+    int32_t value = int32_t(analogRead(A0)) - 2048;
+    sum += value;
+    sumSquares += int64_t(value) * value;
     due += 100;
   }
-  auto sound = detector.analyze(samples);
-  bool valid = timingOK && lateSamples <= 2 && !sound.clipped;
-  bool match = sound.rms >= MIN_RMS_COUNTS && sound.toneRatio >= MIN_TONE_RATIO;
+  double mean = double(sum) / 500.0;
+  double variance = double(sumSquares) / 500.0 - mean * mean;
+  float rms = sqrt(variance > 0 ? variance : 0);
+  bool match = rms >= SOUND_RMS_THRESHOLD;
+  static uint32_t lastReport = 0;
+  if (Serial && uint32_t(millis() - lastReport) >= 250) {
+    lastReport = millis();
+    Serial.print("RMS:"); Serial.print(rms, 2);
+    Serial.print(" State:"); Serial.println(phase == Phase::Clear ? "WAIT_QUIET" : "ARMED");
+  }
   if (phase == Phase::Clear) {
-    clearWindows = valid && !match ? clearWindows + 1 : 0;
+    clearWindows = !match ? clearWindows + 1 : 0;
     if (clearWindows >= 3) {
       phase = Phase::Armed;
       digitalWrite(LED_BUILTIN, HIGH);
       showStatus(READY_MARK);
-      if (Serial) Serial.println("ARMED: waiting for whistle A or B");
+      if (Serial) Serial.println("ARMED: waiting for sound (RMS >= 10)");
     }
     return;
   }
-  matchWindows = valid && match ? matchWindows + 1 : 0;
+  matchWindows = match ? matchWindows + 1 : 0;
   if (matchWindows < 2) return;
   startPull();
 }
@@ -133,7 +141,6 @@ void setup() {
   matrixReady = matrix.begin(); // Allocate the display timer after both PWM channels.
   showStatus(WAIT_MARK);
   if (!escReady || !steeringReady) { stopPull("PWM initialization"); return; }
-  detector.begin();
   settledAt = millis();
 }
 
@@ -166,5 +173,5 @@ void loop() {
   if (uint32_t(now-startedAt) >= RUN_US-ECHO_TIMEOUT_US-2000) return;
   if (uint32_t(now-lastPing) < PING_INTERVAL_US) return;
   lastPing = now;
-  if (!rangeClear()) stopPull("front obstacle or missing echo");
+  if (!rangeClear()) stopPull("front obstacle below 20 cm");
 }

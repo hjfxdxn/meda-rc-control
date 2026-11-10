@@ -7,7 +7,7 @@ struct CommandReply {
 bool hardStop=false,remoteAuto=false;
 uint8_t controlMode=2;
 // Car 82 development presets: only 1430 us is a reported starting threshold.
-int speedPulses[3]={1430,1410,1380};
+int speedPulses[3]={1200,1410,1380};
 uint8_t selectedSpeed=0;
 bool soundTest=false,soundTestArmed=false,soundTestDetected=false;
 unsigned soundClear=0,soundMatches=0;

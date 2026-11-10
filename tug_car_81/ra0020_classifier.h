@@ -7,7 +7,7 @@
 // 10 kHz / 2560 samples = 256 ms. Ten samples form one 1 ms envelope value.
 constexpr int AUDIO_SAMPLES = 2560;
 constexpr int ENV_SAMPLES = 256;
-constexpr float MIN_RMS_COUNTS = 4.0f; // Tune with the actual microphone; 4 counts ~= 4.9 mV RMS.
+constexpr float MIN_RMS_COUNTS = 50.0f; // Trial threshold; approximately 61.1 mV RMS at 5 V / 12 bits.
 constexpr float MIN_TONE_RATIO = 0.65f;
 constexpr float MIN_MOD_DEPTH = 0.10f;
 constexpr float MIN_MOD_PURITY = 0.25f;

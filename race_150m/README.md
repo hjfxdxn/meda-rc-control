@@ -12,7 +12,7 @@ Automatic driving continues if the phone disconnects, the page is hidden, or the
 |---|---|
 | Vehicle | 82 |
 | ESC neutral | 1530 us, provisional legacy bench value |
-| Ultra Slow / Slow / Normal | 1430 / 1410 / 1380 us |
+| Custom / Slow / Normal | 1200 / 1410 / 1380 us |
 | Reverse test endpoint | 1580 us |
 | Steering left / center / right | 1150 / 1550 / 1950 us |
 | Front obstacle stop | Valid reading at or below 80 cm |
@@ -35,7 +35,7 @@ Fresh no-echo measurements are permitted on an open road. The side controller re
 6. **Idle / Disarm** cancels automatic preparation or driving. Use Idle before changing presets, parameters, or modes.
 7. **Arm Sound Start** restarts neutral settling and the quiet-then-whistle sequence. It does not require a continuous phone heartbeat.
 8. **Test Sound Detection — No Motion** is an Idle-only test. It requires three clear windows and two matches, shows DETECTED, and never drives the motor. Repeat the button to retest.
-9. **Manual Mode** enables sliders after neutral settling. Hold **HOLD TO DRIVE** to apply commands; release requests neutral/center. The default 25% throttle scale can remain in the deadband. With Ultra Slow, +100% throttle at 100% scale requests 1430 us, not full throttle. Manual mode does not use obstacle stopping.
+9. **Manual Mode** enables sliders after neutral settling. Hold **HOLD TO DRIVE** to apply commands; release requests neutral/center. The default 25% throttle scale can remain in the deadband. With Custom, +100% throttle at 100% scale requests 1200 us, not full throttle. Manual mode does not use obstacle stopping.
 10. Parameter changes last until reset. Actuator calibration locks after PWM initialization; change startup calibration in `race_config.h`. Change preset pulses and automatic control parameters in Idle.
 
 A phone may load the page and claim control during an autonomous run. Page transfers are chunked, but wireless latency means this is not an independent hardware emergency-stop circuit. Connect before the run when possible.
@@ -76,3 +76,5 @@ Audio: 10 kHz, 2560 samples per 256 ms window. A/B share a carrier near 3.2 kHz.
 GET / serves the page; GET /status returns 20-byte telemetry; GET /info returns identity and sound-test information. POST /stop always requests STOP without a session token. POST /claim obtains a session for other commands. POST /cmd requires the token and a strictly increasing sequence. The local Wi-Fi password is the access boundary; this is not an Internet-facing service.
 
 Host controller tests cover sound gating, open-road no-echo behavior, obstacle/stale-range/time-limit stopping, manual deadman, control-session ownership, autonomous disconnect, and no-session STOP. Browser tests cover controls, language switching, pulse scaling, and STOP using mocked HTTP. UNO R4 WiFi compilation is checked with Renesas UNO 1.5.3. Real sound detection, braking distance, side control, and wireless range still require hardware testing.
+
+The default Custom preset is 1200 us, selected by the user. Slow and Normal remain 1410 and 1380 us. The Custom preset is stronger than both named presets for this car; these labels do not measure speed. Automatic start applies 1200 us directly, without the tug sketch acceleration ramp.

@@ -30,13 +30,13 @@ Car 82 uses the same symbols. Manual backup goes directly from preparing to driv
 
 Connect the ESC signal to **D6** (100 Hz), steering to **D5** (50 Hz), and the microphone analog output to **A0**. On the front HC-SR04, connect Trig to **D8** and Echo to **D12**. Use a common ground. The course specifies the GY-MAX4466 microphone and lists the KY-037 separately as a previous class stock module.
 
-1. Face a reflector toward the front sensor. For the first bench test, place cardboard about 50–100 cm in front. The sensor needs a valid echo at startup and throughout the pull.
+1. A continuous reflector is not required at startup. To test stopping, face a cardboard target toward the sensor and move it below 20 cm, measured from the transducers.
 2. Power on in quiet surroundings. The ESC holds neutral for three seconds. Three consecutive valid windows without the target tone arm the detector. **Wait for the onboard LED to light before sounding the whistle.**
-3. The detector samples at 10 kHz in 256 ms windows. Two consecutive matches to the roughly 3.2 kHz carrier shared by RA0020 tones A and B trigger a front-range check. If it passes, the ESC starts the acceleration ramp described below. Similar high-frequency sounds can also trigger the detector.
+3. Current detection uses AC RMS only: RMS >= 50 (car 81) / 10 (car 82) at 12-bit ADC resolution for two consecutive approximately 50 ms windows. Tone, A/B classification, clipping and sampling-timing gates are not used. After three seconds at neutral, three consecutive windows below the selected threshold arm the detector. Claps and impacts can also trigger it. Serial reports RMS and state about every 250 ms while waiting, and START when forward is commanded. The retained ra0020_classifier.h is reference material and is no longer used by the tug sketches.
 
 ## Stopping and resetting
 
-The ESC receives neutral **10 seconds** after the first forward command. Independently, the controller checks the front range about every 60 ms. Pulling is permitted only for **20 cm < range ≤ 400 cm**. A close target, an out-of-range reading, or a missing echo latches the stop. The LED goes out. Removing the cardboard leaves the car stopped. Press RESET to prepare for the next bout. For a bench stop, send `x` or `n` in Serial Monitor at 115200 baud.
+The ten-second timer starts at the first forward command. Ultrasound is checked about every 60 ms: only a received echo measuring **less than 20 cm** latches neutral. Exactly 20 cm, greater distances, out-of-range readings and missing echoes do not stop or block startup. A disconnected sensor cannot be distinguished from open space by missing echoes; verify cardboard stopping before each match. Stop remains latched until RESET. Serial `x` or `n` at 115200 baud also stops.
 
 ## Optional manual backup
 
@@ -50,4 +50,8 @@ Arrive at least five minutes before the match. Check that the carabiner attaches
 
 ## Acceleration update
 
-Car 81 launches at 1240 us; car 82 at 1330 us. Both ramp to 1100 us over 300 ms, then hold. Smaller pulses request more forward throttle. START_US, PULL_US and RAMP_US configure the ramp. These are trial settings, not calibrated full throttle. Table values remain measured onset records. All stops remain active during acceleration; the 10-second deadline starts with the first drive command.
+Car 81 launches at 1240 us; car 82 at 1330 us. Over 300 ms, car 81 ramps to 1200 us and car 82 to 1100 us, then holds. Smaller pulses request more forward throttle. START_US, PULL_US and RAMP_US configure the ramp. These are trial settings, not calibrated full throttle. Table values remain measured onset records. All stops remain active during acceleration; the 10-second deadline starts with the first drive command.
+
+Current detection uses AC RMS only: RMS >= 50 (car 81) / 10 (car 82) at 12-bit ADC resolution for two consecutive approximately 50 ms windows. Tone, A/B classification, clipping and sampling-timing gates are not used. After three seconds at neutral, three consecutive windows below the selected threshold arm the detector. Claps and impacts can also trigger it. Serial reports RMS and state about every 250 ms while waiting, and START when forward is commanded. The retained ra0020_classifier.h is reference material and is no longer used by the tug sketches.
+
+Car 81 uses RMS >= 50; car 82 retains RMS >= 10. Arming requires three consecutive windows below the selected threshold; starting requires two consecutive windows at or above it.

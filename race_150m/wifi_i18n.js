@@ -23,7 +23,7 @@ const translations = {
  'Read Parameters':'读取参数', 'Apply Parameters':'应用参数',
  'Standalone sound start is enabled at boot. Settings are lost on reset.':'通电后自动准备声音起跑。网页参数在复位后恢复默认。',
  'Wi-Fi runs locally between this device and the car. No external JavaScript or analytics. No automatic reconnection. STOP requires a physical board reset.':'Wi-Fi 仅在本设备与车辆之间通信，不依赖互联网。不会自动重连；停止锁定后需要按板子复位键。',
- 'Ultra Slow pulse (us)':'超慢档脉宽 (μs)', 'Slow pulse (us)':'慢速档脉宽 (μs)', 'Normal pulse (us)':'正常档脉宽 (μs)',
+ 'Custom pulse (us)':'超慢档脉宽 (μs)', 'Slow pulse (us)':'慢速档脉宽 (μs)', 'Normal pulse (us)':'正常档脉宽 (μs)',
  'ESC neutral (us)':'电调中立 (μs)', 'Forward test endpoint (us)':'前进测试端点 (μs)', 'Reverse test endpoint (us)':'后退测试端点 (μs)',
  'Steering center (us)':'转向中立 (μs)', 'Steering left bound (us)':'转向左限位 (μs)', 'Steering right bound (us)':'转向右限位 (μs)',
  'Stop distance (cm)':'停车距离 (cm)', 'Side target (cm)':'侧方目标距离 (cm)', 'Steering gain (0.1 us/cm)':'转向增益 (0.1 μs/cm)',
@@ -41,7 +41,7 @@ const translations = {
  'ERR configuration':'参数配置无效', 'ERR output disabled':'输出未启用', 'ERR control busy':'已有其他控制连接', 'ERR session':'控制会话已失效，请重新连接', 'ERR parameter':'参数无效或标定已锁定',
  'No control session. Connect again.':'没有控制会话，请重新连接。', 'Command pending.':'上一条指令尚未完成。', 'Scale must be 1..100%.':'比例必须为 1～100%。'
 };
-const displayTerms = {'Configuration':'等待配置','Settling':'中立稳定中','Waiting clear':'等待安静','Armed':'等待哨声','Running':'行驶中','Stopped':'已停止','Idle':'待机','Manual':'手动','Automatic':'自动','Ultra Slow':'超慢','Slow':'慢速','Normal':'正常'};
+const displayTerms = {'Configuration':'等待配置','Settling':'中立稳定中','Waiting clear':'等待安静','Armed':'等待哨声','Running':'行驶中','Stopped':'已停止','Idle':'待机','Manual':'手动','Automatic':'自动','Custom':'超慢','Slow':'慢速','Normal':'正常'};
 let language='en';
 try { language=localStorage.getItem('meda-language')==='zh'?'zh':'en'; } catch (_) {}
 const originalText=new WeakMap();
@@ -50,7 +50,7 @@ function translateText(text){
  if(text.includes(' / ')) { const pieces=text.split(' / ');if(pieces.every(p=>displayTerms[p]))return pieces.map(p=>displayTerms[p]).join(' / '); }
  return text.replace(/Original board car: /g,'板子原属车辆：').replace(/Unknown/g,'未知').replace(/Active vehicle: /g,'当前车辆：').replace(/Station MAC: /g,'STA MAC：').replace(/AP MAC: /g,'AP MAC：')
  .replace(/Selected: /g,'当前档位：').replace(/Forward request: /g,'前进指令：').replace(/\(not a measured speed\)/g,'（不是实测车速）')
- .replace(/Ultra Slow|Slow|Normal/g,m=>displayTerms[m]).replace(/\(trial\)/g,'（试验值）')
+ .replace(/Custom|Slow|Normal/g,m=>displayTerms[m]).replace(/\(trial\)/g,'（试验值）')
  .replace(/^Requesting (.+)\.\.\.$/,'正在请求 $1……').replace(/^(.+) accepted\.$/,'$1 已接受。');
 }
 function renderLanguage(){

@@ -11,7 +11,7 @@ inline race::Config makeRaceConfig() {
   race::Config c;
   c.car = 82; // Vehicle selection is explicit, independent of board MAC address.
   c.neutralUs = 1530; // Legacy bench setting, still needs car 82 neutral verification.
-  c.forwardUs = 1430; // Recorded car 82 forward onset; default Ultra Slow.
+  c.forwardUs = 1200; // User-selected default forward trial pulse, not a measured speed.
   c.centerUs = 1550; c.leftUs = 1150; c.rightUs = 1950; // Recorded car 82 limits.
   c.roles[0] = race::Role::Left;  // User confirmed J4: TRIG D9 / ECHO D11.
   c.roles[1] = race::Role::Front; // User confirmed J7: TRIG D8 / ECHO D12.
